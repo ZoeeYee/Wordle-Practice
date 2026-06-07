@@ -654,6 +654,107 @@ const POINTS_KEY = 'wordlePracticePoints';
 const HINTS_KEY = 'wordlePracticeHints';
 const FRIENDS_KEY = 'wordlePracticeFriends';
 const SETTINGS_KEY = 'wordlePracticeSettings';
+const CLOUD_DOC_COLLECTION = 'wordlePractice';
+const CLOUD_DOC_ID = 'globalState';
+
+const cloudState = {
+  enabled: false,
+  loading: false,
+  loaded: false,
+  db: null,
+  docRef: null,
+  data: null,
+  saveTimer: null
+};
+
+function createEmptyCloudData() {
+  return {
+    users: {},
+    stats: {},
+    history: {},
+    points: {},
+    hints: {},
+    friends: {}
+  };
+}
+
+function cloneJSON(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function scheduleCloudSave() {
+  if(!cloudState.enabled || !cloudState.docRef) return;
+  if(cloudState.saveTimer) clearTimeout(cloudState.saveTimer);
+  cloudState.saveTimer = setTimeout(async () => {
+    try {
+      await cloudState.docRef.set(cloudState.data, { merge: true });
+    } catch (err) {
+      console.error('Cloud save failed:', err);
+    }
+  }, 250);
+}
+
+function readLocalMap(localKey) {
+  return JSON.parse(localStorage.getItem(localKey) || '{}');
+}
+
+function writeLocalMap(localKey, value) {
+  localStorage.setItem(localKey, JSON.stringify(value));
+}
+
+function readStoreMap(cloudKey, localKey) {
+  if(cloudState.enabled && cloudState.data) {
+    return cloneJSON(cloudState.data[cloudKey] || {});
+  }
+  return readLocalMap(localKey);
+}
+
+function writeStoreMap(cloudKey, localKey, value) {
+  if(cloudState.enabled && cloudState.data) {
+    cloudState.data[cloudKey] = cloneJSON(value);
+    scheduleCloudSave();
+    return;
+  }
+  writeLocalMap(localKey, value);
+}
+
+async function initCloudStore() {
+  if(cloudState.loaded || cloudState.loading) return;
+  cloudState.loading = true;
+  try {
+    const cfg = window.WORDLE_FIREBASE_CONFIG;
+    const isConfigReady = cfg && cfg.apiKey && cfg.projectId;
+    if(typeof firebase === 'undefined' || !isConfigReady) {
+      cloudState.loading = false;
+      cloudState.loaded = true;
+      return;
+    }
+
+    if(!firebase.apps.length) {
+      firebase.initializeApp(cfg);
+    }
+
+    cloudState.db = firebase.firestore();
+    cloudState.docRef = cloudState.db.collection(CLOUD_DOC_COLLECTION).doc(CLOUD_DOC_ID);
+    const snapshot = await cloudState.docRef.get();
+    const remoteData = snapshot.exists ? snapshot.data() : null;
+    cloudState.data = createEmptyCloudData();
+    if(remoteData && typeof remoteData === 'object') {
+      Object.keys(cloudState.data).forEach((key) => {
+        cloudState.data[key] = remoteData[key] && typeof remoteData[key] === 'object'
+          ? remoteData[key]
+          : {};
+      });
+    }
+    cloudState.enabled = true;
+  } catch (err) {
+    console.error('Cloud init failed:', err);
+    cloudState.enabled = false;
+  } finally {
+    cloudState.loading = false;
+    cloudState.loaded = true;
+  }
+}
 
 const I18N = {
   'zh-Hant': {
@@ -782,51 +883,51 @@ function renderSettingsPanel() {
 }
 
 function getUsers() {
-  return JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
+  return readStoreMap('users', USERS_KEY);
 }
 
 function saveUsers(users) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  writeStoreMap('users', USERS_KEY, users);
 }
 
 function getStats() {
-  return JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+  return readStoreMap('stats', STATS_KEY);
 }
 
 function saveStats(stats) {
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  writeStoreMap('stats', STATS_KEY, stats);
 }
 
 function getHistory() {
-  return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+  return readStoreMap('history', HISTORY_KEY);
 }
 
 function saveHistory(history) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  writeStoreMap('history', HISTORY_KEY, history);
 }
 
 function getPoints() {
-  return JSON.parse(localStorage.getItem(POINTS_KEY) || '{}');
+  return readStoreMap('points', POINTS_KEY);
 }
 
 function savePoints(points) {
-  localStorage.setItem(POINTS_KEY, JSON.stringify(points));
+  writeStoreMap('points', POINTS_KEY, points);
 }
 
 function getHints() {
-  return JSON.parse(localStorage.getItem(HINTS_KEY) || '{}');
+  return readStoreMap('hints', HINTS_KEY);
 }
 
 function saveHints(hints) {
-  localStorage.setItem(HINTS_KEY, JSON.stringify(hints));
+  writeStoreMap('hints', HINTS_KEY, hints);
 }
 
 function getFriends() {
-  return JSON.parse(localStorage.getItem(FRIENDS_KEY) || '{}');
+  return readStoreMap('friends', FRIENDS_KEY);
 }
 
 function saveFriends(friends) {
-  localStorage.setItem(FRIENDS_KEY, JSON.stringify(friends));
+  writeStoreMap('friends', FRIENDS_KEY, friends);
 }
 
 function setCurrentUser(username) {
@@ -1720,11 +1821,16 @@ theGame.setRoundFinishedHandler((result) => {
   openPage(renderRoundResult, result);
 });
 
-applyTheme();
-closeSettingsPanel();
+async function bootstrapApp() {
+  await initCloudStore();
+  applyTheme();
+  closeSettingsPanel();
 
-if(getCurrentUser()) {
-  replacePage(renderMainMenu);
-} else {
-  replacePage(renderAuth);
+  if(getCurrentUser()) {
+    replacePage(renderMainMenu);
+  } else {
+    replacePage(renderAuth);
+  }
 }
+
+bootstrapApp();
