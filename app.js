@@ -1824,23 +1824,29 @@ theGame.setRoundFinishedHandler((result) => {
 async function bootstrapApp() {
   document.body.classList.add('app-booting');
   try {
-    await initCloudStore();
+    // 防止雲端初始化卡住造成整頁空白
+    await Promise.race([
+      initCloudStore(),
+      new Promise(resolve => setTimeout(resolve, 4500))
+    ]);
+  } catch (err) {
+    console.error('Bootstrap cloud init failed:', err);
+  }
+
+  try {
     applyTheme();
     closeSettingsPanel();
-
     if(getCurrentUser()) {
       replacePage(renderMainMenu);
     } else {
       replacePage(renderAuth);
     }
   } catch (err) {
-    console.error('Bootstrap failed:', err);
-    applyTheme();
-    closeSettingsPanel();
+    console.error('Bootstrap render failed:', err);
     replacePage(renderAuth);
-  } finally {
-    document.body.classList.remove('app-booting');
   }
+
+  document.body.classList.remove('app-booting');
 }
 
 bootstrapApp();
