@@ -24,6 +24,12 @@ body {
     box-sizing: border-box;
   }
 
+body.app-booting #controls,
+body.app-booting #game,
+body.app-booting #flow-root {
+  display: none !important;
+}
+
 body.flow-mode {
   justify-content: center;
 }

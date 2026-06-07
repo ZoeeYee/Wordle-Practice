@@ -1822,14 +1822,24 @@ theGame.setRoundFinishedHandler((result) => {
 });
 
 async function bootstrapApp() {
-  await initCloudStore();
-  applyTheme();
-  closeSettingsPanel();
+  document.body.classList.add('app-booting');
+  try {
+    await initCloudStore();
+    applyTheme();
+    closeSettingsPanel();
 
-  if(getCurrentUser()) {
-    replacePage(renderMainMenu);
-  } else {
+    if(getCurrentUser()) {
+      replacePage(renderMainMenu);
+    } else {
+      replacePage(renderAuth);
+    }
+  } catch (err) {
+    console.error('Bootstrap failed:', err);
+    applyTheme();
+    closeSettingsPanel();
     replacePage(renderAuth);
+  } finally {
+    document.body.classList.remove('app-booting');
   }
 }
 
